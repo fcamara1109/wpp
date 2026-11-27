@@ -1,0 +1,172 @@
+<!doctype html>
+<!-- Caixa de WhatsApp: vê e responde os números da UAZAPI numa página só.
+     Usa o chat pronto da UAZAPI (https://docs.uazapi.com/docs/collections/web-embed.md).
+     Nenhum token mora neste arquivo: cada aparelho cola o token uma vez e ele fica só no navegador (localStorage). -->
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="robots" content="noindex">
+<title>WhatsApp doctors</title>
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="WhatsApp">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<link rel="apple-touch-icon" href="icon.png">
+<style>
+  :root { --bg:#f4f5f7; --card:#fff; --tx:#1d2330; --mut:#6b7280; --bd:#dfe3ea; --ac:#0f766e; --ac-tx:#fff; }
+  @media (prefers-color-scheme: dark) { :root { --bg:#12151b; --card:#1b2029; --tx:#e7eaf0; --mut:#9aa3b2; --bd:#2b3240; --ac:#14b8a6; --ac-tx:#06201d; } }
+  * { box-sizing:border-box; }
+  html, body { margin:0; height:100%; background:var(--bg); color:var(--tx); font:15px/1.4 system-ui, -apple-system, sans-serif; }
+  body { display:flex; flex-direction:column; height:100dvh; }
+  header { display:flex; gap:8px; align-items:center; padding:8px 12px; border-bottom:1px solid var(--bd); background:var(--card); overflow-x:auto; flex:0 0 auto; }
+  header b { margin-right:4px; white-space:nowrap; }
+  .chip { border:1px solid var(--bd); background:var(--bg); color:var(--tx); border-radius:999px; padding:6px 12px; cursor:pointer; white-space:nowrap; font:inherit; }
+  .chip.on { background:var(--ac); color:var(--ac-tx); border-color:var(--ac); }
+  .chip .n { font-weight:700; margin-left:4px; }
+  .add { margin-left:auto; }
+  #chat { flex:1 1 auto; min-height:0; }
+  #vazio, #form { margin:24px auto; max-width:420px; padding:0 16px; }
+  #form { display:none; background:var(--card); border:1px solid var(--bd); border-radius:12px; padding:16px; }
+  label { display:block; margin:10px 0 4px; color:var(--mut); font-size:13px; }
+  input { width:100%; padding:10px; border:1px solid var(--bd); border-radius:8px; background:var(--bg); color:var(--tx); font:inherit; }
+  .acoes { display:flex; gap:8px; margin-top:14px; }
+  .btn { flex:1; padding:10px; border-radius:8px; border:0; background:var(--ac); color:var(--ac-tx); font:inherit; font-weight:600; cursor:pointer; }
+  .btn.sec { background:transparent; color:var(--tx); border:1px solid var(--bd); }
+  #erro { color:#dc2626; min-height:1.2em; margin:8px 0 0; }
+  .mut { color:var(--mut); font-size:13px; }
+</style>
+</head>
+<body>
+<header id="barra"><b>WhatsApp</b><span id="chips"></span><button class="chip add" id="btn-add">+ número</button></header>
+
+<div id="vazio" class="mut">Nenhum número ainda. Toque em <b>+ número</b> e cole o token da instância.<br><br>Recebeu um código do Claude? <button type="button" class="btn" id="btn-codigo">Colar código</button></div>
+
+<form id="form" autocomplete="off">
+  <strong id="form-titulo">Novo número</strong>
+  <label for="f-nome">Nome (só pra você)</label>
+  <input id="f-nome" placeholder="Aline" required>
+  <label for="f-server">Servidor</label>
+  <input id="f-server" value="doutores" required>
+  <label for="f-token">Token da instância</label>
+  <input id="f-token" type="password" required>
+  <p class="mut">O token fica só neste navegador. Não vai pra nenhum servidor nosso.</p>
+  <p id="erro"></p>
+  <div class="acoes">
+    <button type="button" class="btn sec" id="btn-cancelar">Cancelar</button>
+    <button type="button" class="btn sec" id="btn-remover" hidden>Remover</button>
+    <button class="btn">Salvar</button>
+  </div>
+</form>
+
+<div id="chat"></div>
+
+<script src="https://web.uazapi.com/embed.js"></script>
+<script>
+  const CHAVE = "wa_numeros_v1";
+  const ler = () => { try { return JSON.parse(localStorage.getItem(CHAVE)) || []; } catch { return []; } };
+  const gravar = (l) => { try { localStorage.setItem(CHAVE, JSON.stringify(l)); } catch {} };
+
+  let numeros = ler();
+  let ativo = numeros.length ? 0 : -1;
+  let editando = -1;
+  const paineis = [];   // um painel carregado por número: troca de aba não recarrega
+  const naoLidas = [];
+  const $ = (id) => document.getElementById(id);
+
+  function titulo() {
+    const t = naoLidas.reduce((a, b) => a + (b || 0), 0);
+    document.title = (t ? `(${t}) ` : "") + "WhatsApp doctors";
+  }
+
+  function chips() {
+    $("chips").innerHTML = "";
+    numeros.forEach((n, i) => {
+      const b = document.createElement("button");
+      b.className = "chip" + (i === ativo ? " on" : "");
+      b.textContent = n.nome;
+      if (naoLidas[i]) { const s = document.createElement("span"); s.className = "n"; s.textContent = naoLidas[i]; b.append(s); }
+      b.onclick = () => (i === ativo ? abrirForm(i) : mostrar(i));
+      b.title = i === ativo ? "Toque de novo pra editar" : "Abrir " + n.nome;
+      $("chips").append(b);
+    });
+    $("vazio").style.display = numeros.length ? "none" : "";
+    titulo();
+  }
+
+  function montar(i) {
+    const n = numeros[i];
+    const caixa = document.createElement("div");
+    caixa.style.height = "100%";
+    caixa.id = "chat-" + Math.random().toString(36).slice(2);
+    $("chat").append(caixa);
+    const p = UazapiWeb.mount("#" + caixa.id, {
+      server: n.server, token: n.token, lazy: false, notifications: false,
+      brand: { name: n.nome, theme: "whatsapp" },
+      onUnread: (q) => { naoLidas[paineis.findIndex((x) => x && x.p === p)] = q; chips(); },
+      onError: (msg) => { abrirForm(paineis.findIndex((x) => x && x.p === p), "Não conectou: " + msg); },
+    });
+    paineis[i] = { p, caixa };
+  }
+
+  function desmontar(i) {
+    if (!paineis[i]) return;
+    paineis[i].p.unmount(); paineis[i].caixa.remove(); paineis[i] = null;
+  }
+
+  function mostrar(i) {
+    ativo = i;
+    paineis.forEach((x, j) => x && (x.caixa.style.display = j === i ? "" : "none"));
+    $("chat").style.display = "";
+    chips();
+  }
+
+  function abrirForm(i, erro) {
+    editando = i;
+    const n = numeros[i] || { nome: "", server: "doutores", token: "" };
+    $("form-titulo").textContent = i >= 0 ? "Editar " + n.nome : "Novo número";
+    $("f-nome").value = n.nome; $("f-server").value = n.server; $("f-token").value = n.token;
+    $("btn-remover").hidden = i < 0;
+    $("erro").textContent = erro || "";
+    $("form").style.display = "block"; $("chat").style.display = "none"; $("vazio").style.display = "none";
+  }
+
+  function fecharForm() { $("form").style.display = "none"; $("chat").style.display = ""; chips(); }
+
+  $("btn-add").onclick = () => abrirForm(-1);
+  $("btn-cancelar").onclick = fecharForm;
+  $("btn-remover").onclick = () => {
+    desmontar(editando);
+    numeros.splice(editando, 1); paineis.splice(editando, 1); naoLidas.splice(editando, 1);
+    gravar(numeros);
+    ativo = numeros.length ? 0 : -1; fecharForm();
+    if (ativo >= 0) mostrar(ativo);
+  };
+  $("form").onsubmit = (e) => {
+    e.preventDefault();
+    const n = { nome: $("f-nome").value.trim(), server: $("f-server").value.trim(), token: $("f-token").value.trim() };
+    const i = editando >= 0 ? editando : numeros.length;
+    numeros[i] = n; gravar(numeros);
+    desmontar(i); montar(i);
+    fecharForm(); mostrar(i);
+  };
+
+  // Código "WA1:<base64 de [{nome,server,token}]>": carrega vários números de uma vez (gerado por gerar_codigo.py)
+  $("btn-codigo").onclick = async () => {
+    let t = "";
+    try { t = (await navigator.clipboard.readText()).trim(); } catch {}
+    if (!t.startsWith("WA1:")) t = (prompt("Cole o código") || "").trim();
+    let lista;
+    try { lista = JSON.parse(atob(t.slice(4))); } catch { lista = null; }
+    if (!t.startsWith("WA1:") || !Array.isArray(lista) || !lista.every((n) => n.nome && n.server && n.token)) { alert("Código inválido"); return; }
+    numeros.forEach((_, i) => desmontar(i));
+    numeros = lista; paineis.length = 0; naoLidas.length = 0; gravar(numeros);
+    numeros.forEach((_, i) => montar(i));
+    mostrar(0);
+  };
+
+  numeros.forEach((_, i) => montar(i));
+  if (ativo >= 0) mostrar(ativo); else chips();
+</script>
+</body>
+</html>
