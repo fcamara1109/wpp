@@ -28,6 +28,9 @@
   #sel { display:none; flex:1; min-width:0; padding:8px 10px; border:1px solid var(--bd); border-radius:8px; background:var(--bg); color:var(--tx); font:inherit; font-weight:600; }
   @media (max-width: 640px) { #chips, #btn-add { display:none; } #sel { display:block; } }
   #chat { flex:1 1 auto; min-height:0; }
+  #ads { flex:1 1 auto; min-height:0; display:none; flex-direction:column; }
+  #ads iframe { flex:1; border:0; width:100%; }
+  #ads a { padding:6px 12px; font-size:13px; color:var(--mut); text-align:right; }
   #vazio, #form { margin:24px auto; max-width:420px; padding:0 16px; }
   #form { display:none; background:var(--card); border:1px solid var(--bd); border-radius:12px; padding:16px; }
   label { display:block; margin:10px 0 4px; color:var(--mut); font-size:13px; }
@@ -62,6 +65,7 @@
 </form>
 
 <div id="chat"></div>
+<div id="ads"><a href="../painel/?pagina=ontem" target="_blank" rel="noopener">Login não abre aqui? Abrir no Safari</a></div>
 
 <script src="https://web.uazapi.com/embed.js"></script>
 <script>
@@ -83,6 +87,11 @@
 
   function chips() {
     $("chips").innerHTML = "";
+    const ads = document.createElement("button");
+    ads.className = "chip" + (ativo === "ads" ? " on" : "");
+    ads.textContent = "📊 Ads ontem";
+    ads.onclick = mostrarAds;
+    $("chips").append(ads);
     numeros.forEach((n, i) => {
       const b = document.createElement("button");
       b.className = "chip" + (i === ativo ? " on" : "");
@@ -97,9 +106,10 @@
     const sel = $("sel");
     sel.innerHTML = "";
     numeros.forEach((n, i) => sel.add(new Option(n.nome + (naoLidas[i] ? ` (${naoLidas[i]})` : ""), i)));
+    sel.add(new Option("📊 Ads ontem", "ads"));
     if (ativo >= 0) sel.add(new Option("✏️ Editar " + numeros[ativo].nome, "editar"));
     sel.add(new Option("+ Novo número", "novo"));
-    sel.value = ativo >= 0 ? String(ativo) : "novo";
+    sel.value = ativo === "ads" ? "ads" : ativo >= 0 ? String(ativo) : "novo";
     titulo();
   }
 
@@ -123,8 +133,23 @@
     paineis[i].p.unmount(); paineis[i].caixa.remove(); paineis[i] = null;
   }
 
+  // Aba "Ads ontem": a página do painel (mesmo endereço, mesmo login Google), carregada só na primeira vez
+  function mostrarAds() {
+    ativo = "ads";
+    if (!$("ads").querySelector("iframe")) {
+      const f = document.createElement("iframe");
+      f.src = "../painel/?pagina=ontem";
+      f.title = "Ads ontem";
+      $("ads").append(f);
+    }
+    $("chat").style.display = "none"; $("form").style.display = "none"; $("vazio").style.display = "none";
+    $("ads").style.display = "flex";
+    chips();
+  }
+
   function mostrar(i) {
     ativo = i;
+    $("ads").style.display = "none";
     paineis.forEach((x, j) => x && (x.caixa.style.display = j === i ? "" : "none"));
     $("chat").style.display = "";
     chips();
@@ -145,7 +170,7 @@
   $("btn-add").onclick = () => abrirForm(-1);
   $("sel").onchange = (e) => {
     const v = e.target.value;
-    if (v === "novo") abrirForm(-1); else if (v === "editar") abrirForm(ativo); else mostrar(Number(v));
+    if (v === "ads") mostrarAds(); else if (v === "novo") abrirForm(-1); else if (v === "editar") abrirForm(ativo); else mostrar(Number(v));
   };
   $("btn-cancelar").onclick = fecharForm;
   $("btn-remover").onclick = () => {
