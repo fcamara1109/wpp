@@ -25,6 +25,8 @@
   .chip.on { background:var(--ac); color:var(--ac-tx); border-color:var(--ac); }
   .chip .n { font-weight:700; margin-left:4px; }
   .add { margin-left:auto; }
+  #sel { display:none; flex:1; min-width:0; padding:8px 10px; border:1px solid var(--bd); border-radius:8px; background:var(--bg); color:var(--tx); font:inherit; font-weight:600; }
+  @media (max-width: 640px) { #chips, #btn-add { display:none; } #sel { display:block; } }
   #chat { flex:1 1 auto; min-height:0; }
   #vazio, #form { margin:24px auto; max-width:420px; padding:0 16px; }
   #form { display:none; background:var(--card); border:1px solid var(--bd); border-radius:12px; padding:16px; }
@@ -38,7 +40,7 @@
 </style>
 </head>
 <body>
-<header id="barra"><b>WhatsApp</b><span id="chips"></span><button class="chip add" id="btn-add">+ número</button></header>
+<header id="barra"><b>WhatsApp</b><span id="chips"></span><select id="sel" aria-label="Número"></select><button class="chip add" id="btn-add">+ número</button></header>
 
 <div id="vazio" class="mut">Nenhum número ainda. Toque em <b>+ número</b> e cole o token da instância.<br><br>Recebeu um código do Claude? <button type="button" class="btn" id="btn-codigo">Colar código</button></div>
 
@@ -91,6 +93,13 @@
       $("chips").append(b);
     });
     $("vazio").style.display = numeros.length ? "none" : "";
+    // Celular: lista que abre no lugar dos botões
+    const sel = $("sel");
+    sel.innerHTML = "";
+    numeros.forEach((n, i) => sel.add(new Option(n.nome + (naoLidas[i] ? ` (${naoLidas[i]})` : ""), i)));
+    if (ativo >= 0) sel.add(new Option("✏️ Editar " + numeros[ativo].nome, "editar"));
+    sel.add(new Option("+ Novo número", "novo"));
+    sel.value = ativo >= 0 ? String(ativo) : "novo";
     titulo();
   }
 
@@ -134,6 +143,10 @@
   function fecharForm() { $("form").style.display = "none"; $("chat").style.display = ""; chips(); }
 
   $("btn-add").onclick = () => abrirForm(-1);
+  $("sel").onchange = (e) => {
+    const v = e.target.value;
+    if (v === "novo") abrirForm(-1); else if (v === "editar") abrirForm(ativo); else mostrar(Number(v));
+  };
   $("btn-cancelar").onclick = fecharForm;
   $("btn-remover").onclick = () => {
     desmontar(editando);
